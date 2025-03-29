@@ -1,7 +1,8 @@
 import React, { useRef, useState, Suspense, useLayoutEffect, useCallback, useEffect, forwardRef, useImperativeHandle, useMemo } from 'react';
 import { Canvas, useLoader, useThree, RootState } from '@react-three/fiber';
 import { Center, TransformControls, OrbitControls, Grid } from '@react-three/drei'; // AxesHelper は削除
-import { Button, Stack, Divider, Paper, Typography, TextField, Box, ButtonGroup, Select, MenuItem, FormControl, InputLabel, SelectChangeEvent } from '@mui/material';
+// InputAdornment を追加
+import { Button, Stack, Divider, Paper, Typography, TextField, Box, ButtonGroup, Select, MenuItem, FormControl, InputLabel, SelectChangeEvent, InputAdornment } from '@mui/material';
 import * as THREE from 'three';
 import { STLLoader, OBJLoader } from 'three-stdlib';
 import Papa from 'papaparse';
@@ -23,21 +24,21 @@ const radToDeg = THREE.MathUtils.radToDeg;
 
 // --- 3D Object Components ---
 // Corrected onSelect prop type for generic ObjectProps
-interface ObjectProps {
+interface ObjectComponentProps { // Renamed from ObjectProps to avoid conflict if needed elsewhere
     isSelected: boolean;
-    onSelect: (type: 'weldPoint' | 'locator' | 'pin', id: string, mesh: THREE.Object3D) => void;
+    onSelect: (mesh: THREE.Object3D) => void; // Simplified for direct use in components
 }
 
-// Adjusted specific component props to use the correct onSelect signature from App
-const WeldPointObject: React.FC<{ point: WeldPoint; isSelected: boolean; onSelect: (mesh: THREE.Object3D) => void }> = ({ point, isSelected, onSelect }) => {
+// Adjusted specific component props
+const WeldPointObject: React.FC<{ point: WeldPoint } & ObjectComponentProps> = ({ point, isSelected, onSelect }) => {
   const meshRef = useRef<THREE.Mesh>(null!); const color = isSelected ? 'yellow' : 'red';
   return ( <mesh ref={meshRef} name={`weldpoint-${point.id}`} userData={{ type: 'weldPoint' }} key={`wp-${point.id}`} position={[point.x, point.y, point.z]} onClick={(e) => { e.stopPropagation(); onSelect(meshRef.current); }} > <sphereGeometry args={[10, 16, 16]} /> <meshStandardMaterial color={color} emissive={isSelected ? color : undefined} emissiveIntensity={isSelected ? 0.5 : 0} /> </mesh> );
 };
-const LocatorObject: React.FC<{ locator: Locator; isSelected: boolean; onSelect: (mesh: THREE.Object3D) => void }> = ({ locator, isSelected, onSelect }) => {
+const LocatorObject: React.FC<{ locator: Locator } & ObjectComponentProps> = ({ locator, isSelected, onSelect }) => {
   const meshRef = useRef<THREE.Mesh>(null!); const color = isSelected ? 'yellow' : 'green'; const rotation = new THREE.Euler(degToRad(locator.rx ?? 0), degToRad(locator.ry ?? 0), degToRad(locator.rz ?? 0));
   return ( <mesh ref={meshRef} name={`locator-${locator.id}`} userData={{ type: 'locator' }} key={`loc-${locator.id}`} position={[locator.x, locator.y, locator.z]} rotation={rotation} onClick={(e) => { e.stopPropagation(); onSelect(meshRef.current); }} > <boxGeometry args={[20, 8, 8]} /> <meshStandardMaterial color={color} emissive={isSelected ? color : undefined} emissiveIntensity={isSelected ? 0.5 : 0} /> </mesh> );
 };
-const PinObject: React.FC<{ pin: Pin; isSelected: boolean; onSelect: (mesh: THREE.Object3D) => void }> = ({ pin, isSelected, onSelect }) => {
+const PinObject: React.FC<{ pin: Pin } & ObjectComponentProps> = ({ pin, isSelected, onSelect }) => {
   const meshRef = useRef<THREE.Mesh>(null!); const color = isSelected ? 'yellow' : 'blue'; const rotation = new THREE.Euler(degToRad(pin.rx ?? 0), degToRad(pin.ry ?? 0), degToRad(pin.rz ?? 0));
   return ( <mesh ref={meshRef} name={`pin-${pin.id}`} userData={{ type: 'pin' }} key={`pin-${pin.id}`} position={[pin.x, pin.y, pin.z]} rotation={rotation} onClick={(e) => { e.stopPropagation(); onSelect(meshRef.current); }} > <cylinderGeometry args={[5, 5, 30, 16]} /> <meshStandardMaterial color={color} emissive={isSelected ? color : undefined} emissiveIntensity={isSelected ? 0.5 : 0} /> </mesh> );
 };
@@ -51,30 +52,28 @@ function Model({ url, fileType }: { url: string, fileType: 'stl' | 'obj' }): JSX
   return null;
 }
 
-// Function to trigger CSV download (変更なし)
+// Function to trigger CSV download
 const downloadCSV = (data: any[], filename: string) => {
     if (data.length === 0) { alert(`No data to export for ${filename}`); return; } const csv = Papa.unparse(data); const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const link = document.createElement('a'); const url = URL.createObjectURL(blob); link.setAttribute('href', url); link.setAttribute('download', filename); link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
 };
 
-// --- Properties Panel Component --- Ensure it returns JSX or null
+// --- Properties Panel Component ---
 interface PropertiesPanelProps {
   selectedObjectData: SceneObjectData | null;
   onUpdate: (updatedData: Partial<SceneObjectData>) => void;
 }
 type AllKeys = keyof WeldPoint | keyof Locator | keyof Pin;
-const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedObjectData, onUpdate }): JSX.Element | null => { // Added return type
+const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedObjectData, onUpdate }): JSX.Element | null => {
   const [editData, setEditData] = useState<Partial<WeldPoint & Locator & Pin>>({});
   useEffect(() => { setEditData(selectedObjectData ?? {}); }, [selectedObjectData]);
-  if (!selectedObjectData) return null; // Return null if no object selected
+  if (!selectedObjectData) return null;
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => { const { name, value } = event.target; const parsedValue = value === '' ? '' : (isNaN(Number(value)) ? value : Number(value)); setEditData(prev => ({ ...prev, [name]: parsedValue })); };
   const handleBlur = (fieldName: AllKeys) => { const currentData = selectedObjectData as any; const editDataTyped = editData as any; const currentValue = currentData[fieldName]; const editedValue = editDataTyped[fieldName]; if (editedValue !== undefined && editedValue !== currentValue) { if (['x', 'y', 'z', 'rx', 'ry', 'rz'].includes(fieldName as string)) { if (typeof editedValue === 'number' && !isNaN(editedValue)) { onUpdate({ [fieldName]: editedValue } as Partial<SceneObjectData>); } else { setEditData(prev => ({ ...prev, [fieldName]: currentValue })); console.warn(`Invalid number input for ${fieldName}. Reverting.`); } } else { onUpdate({ [fieldName]: editedValue } as Partial<SceneObjectData>); } } else if (editedValue === '') { if (currentValue !== undefined && currentValue !== '') { setEditData(prev => ({ ...prev, [fieldName]: currentValue })); } } };
   const formatForDisplay = (value: string | number | undefined): string => { if (value === undefined || value === null) return ''; if (typeof value === 'number') return value.toFixed(3); return String(value); };
-  // Ensure the component returns JSX
   return (
     <Paper elevation={3} sx={{ position: 'absolute', bottom: 10, left: 10, zIndex: 1, p: 2, minWidth: 250, maxWidth: 300, maxHeight: '40vh', overflowY: 'auto', background: 'rgba(40,40,40,0.8)', color: 'white' }}>
       <Typography variant="h6" gutterBottom>Properties</Typography>
       <Box component="form" noValidate autoComplete="off">
-        {/* ... TextFields ... */}
         <TextField label="ID" value={editData.id ?? ''} margin="dense" size="small" fullWidth InputProps={{ readOnly: true, style: { color: 'lightgray' } }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'lightgray !important' }, label: { color: 'lightgray' } }} />
         <TextField label="Process" name="process" value={editData.process ?? ''} onChange={handleInputChange} onBlur={() => handleBlur('process')} margin="dense" size="small" fullWidth InputProps={{ style: { color: 'white' } }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'white !important' }, label: { color: 'lightgray' } }} />
         <TextField label="X" name="x" value={formatForDisplay(editData.x)} onChange={handleInputChange} onBlur={() => handleBlur('x')} margin="dense" size="small" fullWidth type="number" InputProps={{ style: { color: 'white' } }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'white !important' }, label: { color: 'lightgray' } }} />
@@ -96,7 +95,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedObjectData, o
   );
 };
 
-// --- SceneContent Ref Type --- Corrected definition
+// --- SceneContent Ref Type ---
 export interface SceneContentHandles {
   setView: (direction: 'x' | 'y' | 'z' | 'xyz') => void;
 }
@@ -115,6 +114,9 @@ function App() {
   const [selectedObject, setSelectedObject] = useState<SelectedObject>(null);
   const [selectedMesh, setSelectedMesh] = useState<THREE.Object3D | null>(null);
   const [selectedObjectData, setSelectedObjectData] = useState<SceneObjectData | null>(null);
+  // Camera Clipping State
+  const [nearClip, setNearClip] = useState<number>(0.1);
+  const [farClip, setFarClip] = useState<number>(10000);
 
   // Refs
   const modelFileInputRef = useRef<HTMLInputElement>(null);
@@ -126,49 +128,56 @@ function App() {
   const transformControlsRef = useRef<any>(null!);
 
 
-  // --- CSV File Handler --- Corrected state update logic
+  // --- CSV File Handler ---
   const handleCsvFileChange = ( event: React.ChangeEvent<HTMLInputElement>, dataType: 'Weld Point' | 'Locator' | 'Pin' ) => {
     const file = event.target.files?.[0]; if (!file) return; console.log(`Loading ${dataType} CSV:`, file.name);
     Papa.parse(file, { header: true, skipEmptyLines: true, dynamicTyping: true,
       complete: (results) => {
         console.log(`${dataType} Data Loaded:`, results.data);
-        if (results.data.length > 0) { /* ... validation ... */ }
+        if (results.data.length > 0) {
+            const firstRow = results.data[0] as any;
+            if (!firstRow.id || firstRow.x === undefined || firstRow.y === undefined || firstRow.z === undefined) {
+                alert(`Invalid ${dataType} CSV format. Missing required columns (id, x, y, z).`);
+                console.error(`Invalid ${dataType} CSV format.`, firstRow);
+                event.target.value = ''; return;
+            }
+        }
         const loadedData = results.data as any[];
         event.target.value = '';
 
-        // Update the correct state based on dataType using functional updates
-        let newWps = weldPoints;
-        let newLts = locators;
-        let newPins = pins;
-        if (dataType === 'Weld Point') { setWeldPoints(loadedData); newWps = loadedData; }
-        else if (dataType === 'Locator') { setLocators(loadedData); newLts = loadedData; }
-        else if (dataType === 'Pin') { setPins(loadedData); newPins = loadedData; }
-
-        // Update available processes using the *updated* states
-        const allProcesses = [
-            ...newWps.map(item => item.process),
-            ...newLts.map(item => item.process),
-            ...newPins.map(item => item.process),
-        ];
-        const uniqueProcesses = [...new Set(allProcesses.filter(Boolean))] as string[];
-        const newAvailableProcesses = ['ALL', ...uniqueProcesses.sort()];
-
-        setAvailableProcesses(currentAvailable => {
-            if (JSON.stringify(newAvailableProcesses) !== JSON.stringify(currentAvailable)) {
-                 if (!newAvailableProcesses.includes(selectedProcess)) {
-                    setSelectedProcess('ALL');
-                 }
-                return newAvailableProcesses;
-            }
-            return currentAvailable;
-        });
+        // Update the correct state based on dataType
+        if (dataType === 'Weld Point') setWeldPoints(loadedData);
+        else if (dataType === 'Locator') setLocators(loadedData);
+        else if (dataType === 'Pin') setPins(loadedData);
+        // Note: Process list update is now handled by useEffect below
       },
-      error: (error) => { /* ... error handling ... */ },
+      error: (error) => { alert(`Error parsing ${dataType} CSV: ${error.message}`); console.error(`Error parsing ${dataType} CSV:`, error); event.target.value = ''; },
     });
   };
 
+  // --- Effect to Update Available Processes ---
+  useEffect(() => {
+    const allProcesses = [
+        ...weldPoints.map(item => item.process),
+        ...locators.map(item => item.process),
+        ...pins.map(item => item.process),
+    ];
+    const uniqueProcesses = [...new Set(allProcesses.filter(Boolean))] as string[];
+    const newAvailableProcesses = ['ALL', ...uniqueProcesses.sort()];
 
-  // --- Model File Handler --- (変更なし)
+    setAvailableProcesses(currentAvailable => {
+        if (JSON.stringify(newAvailableProcesses) !== JSON.stringify(currentAvailable)) {
+             if (!newAvailableProcesses.includes(selectedProcess)) {
+                setSelectedProcess('ALL');
+             }
+            return newAvailableProcesses;
+        }
+        return currentAvailable;
+    });
+  }, [weldPoints, locators, pins, selectedProcess]); // Depend on all data lists
+
+
+  // --- Model File Handler ---
   const handleModelFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return; const fileType = file.name.split('.').pop()?.toLowerCase();
     if (fileType !== 'stl' && fileType !== 'obj') { alert('Unsupported file type. Please load STL or OBJ files.'); event.target.value = ''; return; }
@@ -178,24 +187,23 @@ function App() {
   const handleLoadClick = (ref: React.RefObject<HTMLInputElement>) => ref.current?.click();
   useLayoutEffect(() => { return () => { if (modelData?.url) { URL.revokeObjectURL(modelData.url); console.log("Revoked Model Object URL:", modelData.url); } }; }, [modelData]);
 
-  // --- Camera View Handler --- (変更なし)
+  // --- Camera View Handler ---
   const handleSetView = (direction: 'x' | 'y' | 'z' | 'xyz') => { sceneContentRef.current?.setView(direction); };
 
-  // --- Process Filter Handler --- (変更なし)
+  // --- Process Filter Handler ---
   const handleProcessChange = (event: SelectChangeEvent<string>) => { setSelectedProcess(event.target.value); };
 
-  // --- Selection Handlers --- (変更なし)
+  // --- Selection Handlers ---
   const handleSelect = useCallback((type: 'weldPoint' | 'locator' | 'pin', id: string, mesh: THREE.Object3D) => {
     setSelectedObject({ type, id });
     setSelectedMesh(mesh);
     let data: SceneObjectData | undefined;
-    // Find data from the original, unfiltered lists
     if (type === 'weldPoint') data = weldPoints.find(p => p.id === id);
     else if (type === 'locator') data = locators.find(l => l.id === id);
     else if (type === 'pin') data = pins.find(p => p.id === id);
     setSelectedObjectData(data ?? null);
     if (orbitControlsRef.current) { orbitControlsRef.current.target.copy(mesh.position); orbitControlsRef.current.update(); }
-  }, [weldPoints, locators, pins]); // Depend on original data lists
+  }, [weldPoints, locators, pins]);
 
   const handleDeselect = useCallback(() => {
     if (!transformControlsRef.current?.dragging) {
@@ -204,14 +212,26 @@ function App() {
     }
   }, []);
 
-  // --- Data Update Handlers --- (変更なし)
+  // --- Data Update Handlers ---
   const updateObjectData = useCallback((id: string, type: 'weldPoint' | 'locator' | 'pin', updates: Partial<WeldPoint | Locator | Pin>) => {
     console.log(`Updating ${type} ${id} from ${Object.keys(updates).join(', ')}:`, updates);
     let foundItem: SceneObjectData | null = null;
     const updateState = (setter: React.Dispatch<React.SetStateAction<any[]>>) => { setter(prev => prev.map(item => { if (item.id === id) { foundItem = { ...item, ...updates }; return foundItem; } return item; })); };
     switch (type) { case 'weldPoint': updateState(setWeldPoints); break; case 'locator': updateState(setLocators); break; case 'pin': updateState(setPins); break; }
     if (selectedObject?.id === id && foundItem) { setSelectedObjectData(foundItem); }
-    if (selectedMesh && selectedObject?.id === id) { /* ... update mesh ... */ }
+    if (selectedMesh && selectedObject?.id === id) {
+        const updatesAny = updates as any;
+        if (updatesAny.x !== undefined) selectedMesh.position.x = updatesAny.x;
+        if (updatesAny.y !== undefined) selectedMesh.position.y = updatesAny.y;
+        if (updatesAny.z !== undefined) selectedMesh.position.z = updatesAny.z;
+        if (type !== 'weldPoint') {
+            const currentRotation = selectedMesh.rotation.clone();
+            if (updatesAny.rx !== undefined) currentRotation.x = degToRad(updatesAny.rx);
+            if (updatesAny.ry !== undefined) currentRotation.y = degToRad(updatesAny.ry);
+            if (updatesAny.rz !== undefined) currentRotation.z = degToRad(updatesAny.rz);
+            if (!currentRotation.equals(selectedMesh.rotation)) { selectedMesh.rotation.copy(currentRotation); }
+        }
+     }
   }, [selectedObject, selectedMesh, setWeldPoints, setLocators, setPins]);
 
   const handlePropertyUpdate = useCallback((updates: Partial<SceneObjectData>) => {
@@ -227,33 +247,42 @@ function App() {
   }, [selectedObject, selectedMesh, updateObjectData]);
 
 
-  // --- Filtered Data --- Ensure useMemo returns correct types
-  const filteredWeldPoints = useMemo<WeldPoint[]>(() => { // Explicit return type
-    // console.log("Filtering WP for process:", selectedProcess); // Reduce console noise
+  // --- Filtered Data ---
+  const filteredWeldPoints = useMemo<WeldPoint[]>(() => {
     if (selectedProcess === 'ALL') return weldPoints;
     return weldPoints.filter(wp => wp.process === selectedProcess);
   }, [weldPoints, selectedProcess]);
 
-  const filteredLocators = useMemo<Locator[]>(() => { // Explicit return type
-    // console.log("Filtering LT for process:", selectedProcess);
+  const filteredLocators = useMemo<Locator[]>(() => {
     if (selectedProcess === 'ALL') return locators;
     return locators.filter(lt => lt.process === selectedProcess);
   }, [locators, selectedProcess]);
 
-  const filteredPins = useMemo<Pin[]>(() => { // Explicit return type
-    // console.log("Filtering Pin for process:", selectedProcess);
+  const filteredPins = useMemo<Pin[]>(() => {
      if (selectedProcess === 'ALL') return pins;
      return pins.filter(pin => pin.process === selectedProcess);
   }, [pins, selectedProcess]);
 
+  // --- Camera Clip Handlers ---
+  const handleNearClipChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(event.target.value);
+    if (!isNaN(value) && value > 0) { setNearClip(value); }
+  };
+  const handleFarClipChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(event.target.value);
+    if (!isNaN(value) && value > nearClip) { setFarClip(value); }
+     else if (!isNaN(value) && value <= nearClip) {
+        console.warn("Far clip must be greater than near clip.");
+    }
+  };
+
 
   return (
     <div className="App">
-      {/* --- Control Panel --- (変更なし) */}
-      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1, background: 'rgba(40,40,40,0.8)', padding: '10px', borderRadius: '5px', color: 'white' }}>
+      {/* --- Control Panel --- */}
+      <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 1, background: 'rgba(40,40,40,0.8)', padding: '10px', borderRadius: '5px', color: 'white', maxHeight: '95vh', overflowY: 'auto' }}>
         <Stack direction="column" spacing={1}>
             <input type="file" ref={modelFileInputRef} onChange={handleModelFileChange} style={{ display: 'none' }} accept=".stl,.obj" />
-            {/* Corrected handleCsvFileChange call */}
             <input type="file" ref={weldPointFileInputRef} onChange={(e) => handleCsvFileChange(e, 'Weld Point')} style={{ display: 'none' }} accept=".csv" />
             <input type="file" ref={locatorFileInputRef} onChange={(e) => handleCsvFileChange(e, 'Locator')} style={{ display: 'none' }} accept=".csv" />
             <input type="file" ref={pinFileInputRef} onChange={(e) => handleCsvFileChange(e, 'Pin')} style={{ display: 'none' }} accept=".csv" />
@@ -280,15 +309,18 @@ function App() {
                 <Button onClick={() => handleSetView('z')} sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.5)' }}>Z</Button>
                 <Button onClick={() => handleSetView('xyz')} sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.5)' }}>XYZ</Button>
              </ButtonGroup>
+             <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.5)' }} />
+             <Typography variant="caption" sx={{ color: 'lightgray', mb: 0.5 }}>Camera Clipping</Typography>
+             <TextField label="Near Plane" type="number" size="small" value={nearClip} onChange={handleNearClipChange} InputProps={{ style: { color: 'white' }, inputProps: { min: 0.01, step: 0.1 }, startAdornment: <InputAdornment position="start" sx={{color: 'lightgray'}}>N:</InputAdornment>, }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'white !important' }, label: { color: 'lightgray' }, mb: 1 }} />
+             <TextField label="Far Plane" type="number" size="small" value={farClip} onChange={handleFarClipChange} InputProps={{ style: { color: 'white' }, inputProps: { min: nearClip + 0.1, step: 100 }, startAdornment: <InputAdornment position="start" sx={{color: 'lightgray'}}>F:</InputAdornment>, }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'white !important' }, label: { color: 'lightgray' } }} />
         </Stack>
       </div>
 
-       {/* --- Properties Panel (Moved outside Canvas) --- */}
        <PropertiesPanel selectedObjectData={selectedObjectData} onUpdate={handlePropertyUpdate} />
 
-      {/* --- Canvas for 3D Scene --- */}
       <div style={{ height: '100vh', width: '100vw', position: 'relative' }}>
-        <Canvas camera={{ position: [0, 50, 150], fov: 50, near: 0.1, far: 2000 }}>
+        {/* --- 修正: Canvas の camera prop から near/far を削除 --- */}
+        <Canvas camera={{ position: [0, 50, 150], fov: 50 }}>
           <SceneContent
             ref={sceneContentRef}
             modelData={modelData}
@@ -302,6 +334,9 @@ function App() {
             handleTransformEnd={handleTransformEnd}
             orbitControlsRef={orbitControlsRef}
             transformControlsRef={transformControlsRef}
+            // --- 追加: nearClip と farClip を props として渡す ---
+            nearClip={nearClip}
+            farClip={farClip}
           />
         </Canvas>
       </div>
@@ -311,7 +346,7 @@ function App() {
 
 export default App;
 
-// --- SceneContent Component (Refactored) ---
+// --- SceneContent Component ---
 interface SceneContentProps {
   modelData: { url: string; fileType: 'stl' | 'obj' } | null;
   weldPoints: WeldPoint[];
@@ -324,6 +359,9 @@ interface SceneContentProps {
   handleTransformEnd: () => void;
   orbitControlsRef: React.RefObject<OrbitControlsImpl>;
   transformControlsRef: React.RefObject<any>;
+  // --- 追加: nearClip と farClip を props で受け取る ---
+  nearClip: number;
+  farClip: number;
 }
 
 const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
@@ -337,8 +375,11 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
   handleDeselect,
   handleTransformEnd,
   orbitControlsRef,
-  transformControlsRef
-}, ref) => {
+  transformControlsRef,
+  // --- 追加: props から nearClip と farClip を受け取る ---
+  nearClip,
+  farClip
+}, ref): JSX.Element => { // Added return type
 
   const { camera, scene, controls } = useThree((state: RootState) => ({
       camera: state.camera as THREE.PerspectiveCamera,
@@ -346,9 +387,19 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
       controls: state.controls as OrbitControlsImpl | null
   }));
 
+  // --- 追加: useEffect で near/far の変更をカメラに適用 ---
+  useEffect(() => {
+    if (camera) {
+      camera.near = nearClip;
+      camera.far = farClip;
+      camera.updateProjectionMatrix(); // 変更を適用するために必要
+      console.log(`Camera clip planes updated: near=${camera.near}, far=${camera.far}`);
+    }
+  }, [camera, nearClip, farClip]); // camera, nearClip, farClip が変更されたら実行
+
   // Expose setView method via ref
   useImperativeHandle(ref, () => ({
-    setView: (direction: 'x' | 'y' | 'z' | 'xyz') => { // Added type for direction
+    setView: (direction: 'x' | 'y' | 'z' | 'xyz') => {
       if (!controls || !(controls instanceof OrbitControlsImpl) || !camera) return;
       const box = new THREE.Box3(); let objectsFound = false;
       const objectsToFrame: THREE.Object3D[] = [];
@@ -382,7 +433,7 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
       const transform = transformControlsRef.current;
       const orbit = orbitControlsRef.current;
       if (!transform || !orbit) return;
-      // Correctly access the dragging state from the event
+      // Correct event type for drei's TransformControls
       const callback = (event: { value: boolean }) => { orbit.enabled = !event.value; };
       transform.addEventListener('dragging-changed', callback);
       return () => transform.removeEventListener('dragging-changed', callback);
@@ -394,9 +445,8 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
   };
 
 
-  return (
+  return ( // Ensure return statement is present
     <>
-      {/* PropertiesPanel is rendered in App */}
       <mesh scale={1000} onClick={handleDeselect} > <planeGeometry /> <meshBasicMaterial visible={false} /> </mesh>
       <ambientLight intensity={0.8} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
@@ -405,7 +455,6 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
       <Suspense fallback={null}>
         {modelData ? ( <Center> <Model url={modelData.url} fileType={modelData.fileType} /> </Center> )
          : ( <mesh> <boxGeometry args={[1, 1, 1]} /> <meshStandardMaterial color="orange" /> </mesh> )}
-        {/* Pass the internal handler */}
         {weldPoints.map((point) => ( <WeldPointObject key={`wp-${point.id}`} point={point} isSelected={selectedObject?.type === 'weldPoint' && selectedObject.id === point.id} onSelect={onObjectSelect('weldPoint', point.id)} /> ))}
         {locators.map((loc) => ( <LocatorObject key={`loc-${loc.id}`} locator={loc} isSelected={selectedObject?.type === 'locator' && selectedObject.id === loc.id} onSelect={onObjectSelect('locator', loc.id)} /> ))}
         {pins.map((pin) => ( <PinObject key={`pin-${pin.id}`} pin={pin} isSelected={selectedObject?.type === 'pin' && selectedObject.id === pin.id} onSelect={onObjectSelect('pin', pin.id)} /> ))}
