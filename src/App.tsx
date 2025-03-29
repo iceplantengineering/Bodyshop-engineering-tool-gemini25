@@ -340,10 +340,32 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
     if (type === 'weldPoint') data = weldPoints.find(p => p.id === id);
     else if (type === 'locator') data = locators.find(l => l.id === id);
     else if (type === 'pin') data = pins.find(p => p.id === id); // Find pin from filtered list
-    setSelectedObjectData(data ?? null); console.log(`Selected ${type}: ${id}`, data);
+    setSelectedObjectData(data ?? null); // console.log(`Selected ${type}: ${id}`, data);
+
+    // --- 追加: OrbitControls のターゲットを選択オブジェクトの位置に設定 ---
+    if (orbitControlsRef.current) {
+      orbitControlsRef.current.target.copy(mesh.position);
+      orbitControlsRef.current.update(); // コントロールを更新
+      console.log("OrbitControls target set to:", mesh.position);
+    }
+    // --- 追加ここまで ---
   };
 
-  const handleDeselect = useCallback(() => { if (!transformControlsRef.current?.dragging) { setSelectedObject(null); setSelectedMesh(null); setSelectedObjectData(null); console.log('Deselected'); } }, []);
+  const handleDeselect = useCallback(() => {
+    if (!transformControlsRef.current?.dragging) {
+      setSelectedObject(null);
+      setSelectedMesh(null);
+      setSelectedObjectData(null);
+      // --- 追加: OrbitControls のターゲットを原点に戻す (任意) ---
+      if (orbitControlsRef.current) {
+        orbitControlsRef.current.target.set(0, 0, 0);
+        orbitControlsRef.current.update();
+        console.log("OrbitControls target reset to origin");
+      }
+      // --- 追加ここまで ---
+      /* console.log('Deselected'); */
+    }
+   }, []);
 
   const updateObjectData = useCallback((id: string, type: 'weldPoint' | 'locator' | 'pin', updates: Partial<WeldPoint | Locator | Pin>) => {
     console.log(`Updating ${type} ${id} from ${Object.keys(updates).join(', ')}:`, updates); let foundItem: SceneObjectData | null = null;
@@ -361,7 +383,7 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
 
   return (
     <>
-      <PropertiesPanel selectedObjectData={selectedObjectData} onUpdate={handlePropertyUpdate} />
+      {/* <PropertiesPanel selectedObjectData={selectedObjectData} onUpdate={handlePropertyUpdate} /> */}
       <mesh scale={1000} onClick={handleDeselect} > <planeGeometry /> <meshBasicMaterial visible={false} /> </mesh>
       <ambientLight intensity={0.8} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
@@ -373,9 +395,9 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
         {weldPoints.map((point) => ( <WeldPointObject key={`wp-${point.id}`} point={point} isSelected={selectedObject?.type === 'weldPoint' && selectedObject.id === point.id} onSelect={(mesh) => handleSelect('weldPoint', point.id, mesh)} /> ))}
         {locators.map((loc) => ( <LocatorObject key={`loc-${loc.id}`} locator={loc} isSelected={selectedObject?.type === 'locator' && selectedObject.id === loc.id} onSelect={(mesh) => handleSelect('locator', loc.id, mesh)} /> ))}
         {pins.map((pin) => ( <PinObject key={`pin-${pin.id}`} pin={pin} isSelected={selectedObject?.type === 'pin' && selectedObject.id === pin.id} onSelect={(mesh) => handleSelect('pin', pin.id, mesh)} /> ))} {/* Render filtered pins */}
-        {selectedMesh && (
+        {/* {selectedMesh && (
           <TransformControls ref={transformControlsRef} object={selectedMesh} mode={selectedObject?.type === 'weldPoint' ? 'translate' : 'translate'} onMouseUp={handleTransformEnd} size={0.5} />
-        )}
+        )} */}
       </Suspense>
       <OrbitControls makeDefault ref={orbitControlsRef} />
       <Grid infiniteGrid rotation={[Math.PI / 2, 0, 0]} cellSize={100} sectionSize={1000} sectionColor={"lightblue"} fadeDistance={5000} />
