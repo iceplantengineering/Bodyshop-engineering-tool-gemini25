@@ -8,15 +8,17 @@ import { STLLoader, OBJLoader } from 'three-stdlib';
 import Papa from 'papaparse';
 import './App.css';
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { v4 as uuidv4 } from 'uuid'; // UUID生成用
+import ControlPanelRight from './ControlPanelRight'; // Import the new panel
 
-// Interfaces for CSV data
-interface WeldPoint { id: string; process: string; x: number; y: number; z: number; gun?: string; notes?: string; }
-interface Locator { id: string; process: string; x: number; y: number; z: number; rx?: number; ry?: number; rz?: number; notes?: string; }
-interface Pin { id: string; process: string; x: number; y: number; z: number; rx?: number; ry?: number; rz?: number; notes?: string; }
-type SceneObjectData = WeldPoint | Locator | Pin;
+// Interfaces for CSV data (Exported)
+export interface WeldPoint { id: string; process: string; x: number; y: number; z: number; gun?: string; notes?: string; }
+export interface Locator { id: string; process: string; x: number; y: number; z: number; rx?: number; ry?: number; rz?: number; notes?: string; }
+export interface Pin { id: string; process: string; x: number; y: number; z: number; rx?: number; ry?: number; rz?: number; notes?: string; }
+export type SceneObjectData = WeldPoint | Locator | Pin;
 
-// Type for selected object state
-type SelectedObject = { type: 'weldPoint' | 'locator' | 'pin'; id: string } | null;
+// Type for selected object state (Exported)
+export type SelectedObject = { type: 'weldPoint' | 'locator' | 'pin'; id: string } | null;
 
 // Helper function to convert degrees to radians and vice versa
 const degToRad = THREE.MathUtils.degToRad;
@@ -61,20 +63,100 @@ const downloadCSV = (data: any[], filename: string) => {
 interface PropertiesPanelProps {
   selectedObjectData: SceneObjectData | null;
   onUpdate: (updatedData: Partial<SceneObjectData>) => void;
+  // Add all data lists for ID uniqueness check
+  allWeldPoints: WeldPoint[];
+  allLocators: Locator[];
+  allPins: Pin[];
 }
 type AllKeys = keyof WeldPoint | keyof Locator | keyof Pin;
-const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedObjectData, onUpdate }): JSX.Element | null => {
+const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
+  selectedObjectData,
+  onUpdate,
+  allWeldPoints,
+  allLocators,
+  allPins
+}): JSX.Element | null => {
   const [editData, setEditData] = useState<Partial<WeldPoint & Locator & Pin>>({});
   useEffect(() => { setEditData(selectedObjectData ?? {}); }, [selectedObjectData]);
   if (!selectedObjectData) return null;
-  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => { const { name, value } = event.target; const parsedValue = value === '' ? '' : (isNaN(Number(value)) ? value : Number(value)); setEditData(prev => ({ ...prev, [name]: parsedValue })); };
-  const handleBlur = (fieldName: AllKeys) => { const currentData = selectedObjectData as any; const editDataTyped = editData as any; const currentValue = currentData[fieldName]; const editedValue = editDataTyped[fieldName]; if (editedValue !== undefined && editedValue !== currentValue) { if (['x', 'y', 'z', 'rx', 'ry', 'rz'].includes(fieldName as string)) { if (typeof editedValue === 'number' && !isNaN(editedValue)) { onUpdate({ [fieldName]: editedValue } as Partial<SceneObjectData>); } else { setEditData(prev => ({ ...prev, [fieldName]: currentValue })); console.warn(`Invalid number input for ${fieldName}. Reverting.`); } } else { onUpdate({ [fieldName]: editedValue } as Partial<SceneObjectData>); } } else if (editedValue === '') { if (currentValue !== undefined && currentValue !== '') { setEditData(prev => ({ ...prev, [fieldName]: currentValue })); } } };
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target;
+    // For numeric fields, parse to number, otherwise keep as string. Handle empty string specifically.
+    const parsedValue = (name === 'x' || name === 'y' || name === 'z' || name === 'rx' || name === 'ry' || name === 'rz')
+      ? (value === '' ? '' : (isNaN(Number(value)) ? value : Number(value))) // Keep invalid number as string for temp state
+      : value; // Keep ID, process, notes, gun as string
+    setEditData(prev => ({ ...prev, [name]: parsedValue }));
+  };
+
+  const handleBlur = (fieldName: AllKeys) => {
+    const currentData = selectedObjectData as any; // Original data of the selected object
+    const editDataTyped = editData as any;       // Current state of the input fields
+    const currentValue = currentData[fieldName]; // Original value of the blurred field
+    const editedValue = editDataTyped[fieldName]; // Value currently in the input field
+
+    // If the value hasn't actually changed, do nothing
+    if (editedValue === currentValue) {
+        console.log(`Blur on ${fieldName}, value unchanged.`);
+        return;
+    }
+
+    // --- ID Validation ---
+    if (fieldName === 'id') {
+        const newId = String(editedValue).trim(); // Ensure it's a string and trim whitespace
+        if (newId === '') {
+            alert("ID cannot be empty.");
+            setEditData(prev => ({ ...prev, id: currentValue })); // Revert to original ID
+            return;
+        }
+        // Check for uniqueness across all items EXCEPT the current one
+        const isDuplicate = [
+            ...allWeldPoints.filter(item => item.id !== currentData.id),
+            ...allLocators.filter(item => item.id !== currentData.id),
+            ...allPins.filter(item => item.id !== currentData.id)
+        ].some(item => item.id === newId);
+
+        if (isDuplicate) {
+            alert(`ID "${newId}" already exists. Please choose a unique ID.`);
+            setEditData(prev => ({ ...prev, id: currentValue })); // Revert
+            return;
+        }
+        // If valid and unique, proceed to update
+        onUpdate({ id: newId });
+        return; // ID update handled, exit function
+    }
+
+    // --- Numeric Field Validation ---
+    if (['x', 'y', 'z', 'rx', 'ry', 'rz'].includes(fieldName as string)) {
+        if (editedValue === '' || typeof editedValue !== 'number' || isNaN(editedValue)) {
+             console.warn(`Invalid number input for ${fieldName}: "${editedValue}". Reverting.`);
+             alert(`Invalid number for ${fieldName}. Please enter a valid number.`);
+             setEditData(prev => ({ ...prev, [fieldName]: currentValue })); // Revert
+             return;
+        }
+         // If valid number, proceed to update
+         onUpdate({ [fieldName]: editedValue } as Partial<SceneObjectData>);
+         return; // Numeric update handled
+    }
+
+    // --- Other Fields (process, notes, gun) ---
+    // Allow empty strings for these fields if needed
+    if (editedValue !== undefined) { // Check if it was actually edited (could be null/undefined initially)
+        onUpdate({ [fieldName]: editedValue } as Partial<SceneObjectData>);
+    } else if (editedValue === '' && currentValue !== '') {
+        // If user cleared a field that previously had value, update it to empty string
+         onUpdate({ [fieldName]: '' } as Partial<SceneObjectData>);
+    }
+    // No action needed if editedValue is undefined and currentValue was also undefined/null
+  };
+
   const formatForDisplay = (value: string | number | undefined): string => { if (value === undefined || value === null) return ''; if (typeof value === 'number') return value.toFixed(3); return String(value); };
   return (
     <Paper elevation={3} sx={{ position: 'absolute', bottom: 10, left: 10, zIndex: 1, p: 2, minWidth: 250, maxWidth: 300, maxHeight: '40vh', overflowY: 'auto', background: 'rgba(40,40,40,0.8)', color: 'white' }}>
       <Typography variant="h6" gutterBottom>Properties</Typography>
       <Box component="form" noValidate autoComplete="off">
-        <TextField label="ID" value={editData.id ?? ''} margin="dense" size="small" fullWidth InputProps={{ readOnly: true, style: { color: 'lightgray' } }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'lightgray !important' }, label: { color: 'lightgray' } }} />
+        {/* Removed readOnly from ID field */}
+        <TextField label="ID" name="id" value={editData.id ?? ''} onChange={handleInputChange} onBlur={() => handleBlur('id')} margin="dense" size="small" fullWidth InputProps={{ style: { color: 'white' } }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'white !important' }, label: { color: 'lightgray' } }} />
         <TextField label="Process" name="process" value={editData.process ?? ''} onChange={handleInputChange} onBlur={() => handleBlur('process')} margin="dense" size="small" fullWidth InputProps={{ style: { color: 'white' } }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'white !important' }, label: { color: 'lightgray' } }} />
         <TextField label="X" name="x" value={formatForDisplay(editData.x)} onChange={handleInputChange} onBlur={() => handleBlur('x')} margin="dense" size="small" fullWidth type="number" InputProps={{ style: { color: 'white' } }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'white !important' }, label: { color: 'lightgray' } }} />
         <TextField label="Y" name="y" value={formatForDisplay(editData.y)} onChange={handleInputChange} onBlur={() => handleBlur('y')} margin="dense" size="small" fullWidth type="number" InputProps={{ style: { color: 'white' } }} InputLabelProps={{ style: { color: 'lightgray' } }} sx={{ input: { '-webkit-text-fill-color': 'white !important' }, label: { color: 'lightgray' } }} />
@@ -117,6 +199,12 @@ function App() {
   // Camera Clipping State
   const [nearClip, setNearClip] = useState<number>(0.1);
   const [farClip, setFarClip] = useState<number>(10000);
+  // Visibility states
+  const [showModel, setShowModel] = useState<boolean>(true);
+  const [showWeldPoints, setShowWeldPoints] = useState<boolean>(true);
+  const [showLocators, setShowLocators] = useState<boolean>(true);
+  const [showPins, setShowPins] = useState<boolean>(true);
+
 
   // Refs
   const modelFileInputRef = useRef<HTMLInputElement>(null);
@@ -193,17 +281,41 @@ function App() {
   // --- Process Filter Handler ---
   const handleProcessChange = (event: SelectChangeEvent<string>) => { setSelectedProcess(event.target.value); };
 
-  // --- Selection Handlers ---
-  const handleSelect = useCallback((type: 'weldPoint' | 'locator' | 'pin', id: string, mesh: THREE.Object3D) => {
+  // --- Selection Handlers --- (Updated handleSelect signature)
+  const handleSelect = useCallback((type: 'weldPoint' | 'locator' | 'pin', id: string, mesh: THREE.Object3D | null) => {
+    // If mesh is null (selected from list), try to find it in the scene
+    // This part might need refinement depending on how meshes are managed/accessed
+    let foundMesh = mesh;
+    if (!foundMesh) {
+        // Attempt to find the mesh by name in the scene
+        // NOTE: This requires access to the scene object, which isn't directly available here.
+        // This logic might need to live within SceneContent or be handled differently.
+        // For now, we proceed assuming mesh might be null if not found immediately.
+        console.warn(`Mesh not provided for ${type} ${id}. Attempting selection without mesh focus.`);
+        // Example: const scene = sceneContentRef.current?.getSceneObject(); // Hypothetical function
+        // if (scene) foundMesh = scene.getObjectByName(`${type}-${id}`);
+    }
+
     setSelectedObject({ type, id });
-    setSelectedMesh(mesh);
+    setSelectedMesh(foundMesh); // Can be null if not found/provided
+
     let data: SceneObjectData | undefined;
     if (type === 'weldPoint') data = weldPoints.find(p => p.id === id);
     else if (type === 'locator') data = locators.find(l => l.id === id);
     else if (type === 'pin') data = pins.find(p => p.id === id);
     setSelectedObjectData(data ?? null);
-    if (orbitControlsRef.current) { orbitControlsRef.current.target.copy(mesh.position); orbitControlsRef.current.update(); }
+
+    // Only focus camera if mesh is found
+    if (foundMesh && orbitControlsRef.current) {
+        orbitControlsRef.current.target.copy(foundMesh.position);
+        orbitControlsRef.current.update();
+    } else if (!foundMesh) {
+        // Optionally reset camera target if mesh isn't found? Or leave as is.
+        // orbitControlsRef.current?.target.set(0, 0, 0);
+        // orbitControlsRef.current?.update();
+    }
   }, [weldPoints, locators, pins]);
+
 
   const handleDeselect = useCallback(() => {
     if (!transformControlsRef.current?.dragging) {
@@ -245,6 +357,60 @@ function App() {
     if (type !== 'weldPoint') { updates = { ...updates, rx: radToDeg(rotation.x), ry: radToDeg(rotation.y), rz: radToDeg(rotation.z) }; }
     updateObjectData(id, type, updates);
   }, [selectedObject, selectedMesh, updateObjectData]);
+
+  // --- Add/Delete Handlers ---
+  const getCameraLookAtPoint = (distance = 100): THREE.Vector3 => {
+      const camera = orbitControlsRef.current?.object;
+      if (!camera) return new THREE.Vector3(0, 0, 0); // Fallback
+      const lookAtVector = new THREE.Vector3(0, 0, -1);
+      lookAtVector.applyQuaternion(camera.quaternion);
+      lookAtVector.multiplyScalar(distance);
+      const targetPoint = camera.position.clone().add(lookAtVector);
+      return targetPoint;
+  };
+
+  const addElement = (type: 'weldPoint' | 'locator' | 'pin') => {
+      const newId = uuidv4();
+      const position = getCameraLookAtPoint(100); // Add slightly in front of camera view
+      const commonProps = { id: newId, process: 'NEW', x: position.x, y: position.y, z: position.z, notes: '' };
+      let newItem: WeldPoint | Locator | Pin;
+
+      if (type === 'weldPoint') {
+          newItem = { ...commonProps, gun: 'DefaultGun' };
+          setWeldPoints(prev => [...prev, newItem]);
+      } else { // Locator or Pin
+          const rotationProps = { rx: 0, ry: 0, rz: 0 };
+          newItem = { ...commonProps, ...rotationProps };
+          if (type === 'locator') {
+              setLocators(prev => [...prev, newItem as Locator]);
+          } else { // Pin
+              setPins(prev => [...prev, newItem as Pin]);
+          }
+      }
+      console.log(`Added new ${type}:`, newItem);
+      // Optionally select the newly added item immediately
+      // setTimeout(() => {
+      //     const newMesh = scene.getObjectByName(`${type}-${newId}`); // Need access to scene or a way to find the mesh
+      //     if (newMesh) handleSelect(type, newId, newMesh);
+      // }, 100); // Delay to allow mesh creation
+  };
+
+  const deleteSelectedElement = () => {
+      if (!selectedObject) {
+          alert("No object selected to delete.");
+          return;
+      }
+      const { type, id } = selectedObject;
+      const confirmation = window.confirm(`Are you sure you want to delete ${type} ${id}?`);
+      if (!confirmation) return;
+
+      if (type === 'weldPoint') setWeldPoints(prev => prev.filter(item => item.id !== id));
+      else if (type === 'locator') setLocators(prev => prev.filter(item => item.id !== id));
+      else if (type === 'pin') setPins(prev => prev.filter(item => item.id !== id));
+
+      console.log(`Deleted ${type} ${id}`);
+      handleDeselect(); // Deselect after deletion
+  };
 
 
   // --- Filtered Data ---
@@ -316,9 +482,16 @@ function App() {
         </Stack>
       </div>
 
-       <PropertiesPanel selectedObjectData={selectedObjectData} onUpdate={handlePropertyUpdate} />
+      <PropertiesPanel
+           selectedObjectData={selectedObjectData}
+           onUpdate={handlePropertyUpdate}
+           allWeldPoints={weldPoints} // Pass full list
+           allLocators={locators}     // Pass full list
+           allPins={pins}           // Pass full list
+       />
 
-      <div style={{ height: '100vh', width: '100vw', position: 'relative' }}>
+     {/* Canvas Container - Adjusted width for right panel */}
+      <div style={{ height: '100vh', width: '100vw', position: 'relative', paddingRight: '290px', boxSizing: 'border-box' }}>
         {/* --- 修正: Canvas の camera prop から near/far を削除 --- */}
         <Canvas camera={{ position: [0, 50, 150], fov: 50 }}>
           <SceneContent
@@ -335,11 +508,31 @@ function App() {
             orbitControlsRef={orbitControlsRef}
             transformControlsRef={transformControlsRef}
             // --- 追加: nearClip と farClip を props として渡す ---
-            nearClip={nearClip}
+            nearClip={nearClip} // Removed duplicate nearClip
             farClip={farClip}
+            // Pass visibility states
+            showModel={showModel}
+            showWeldPoints={showWeldPoints}
+            showLocators={showLocators}
+            showPins={showPins}
           />
         </Canvas>
       </div>
+
+      {/* --- Right Control Panel --- */}
+      <ControlPanelRight
+        showModel={showModel} setShowModel={setShowModel}
+        showWeldPoints={showWeldPoints} setShowWeldPoints={setShowWeldPoints}
+        showLocators={showLocators} setShowLocators={setShowLocators}
+        showPins={showPins} setShowPins={setShowPins}
+        weldPoints={weldPoints} // Pass all weld points for the list
+        locators={locators}     // Pass all locators for the list
+        pins={pins}           // Pass all pins for the list
+        selectedObject={selectedObject}
+        handleSelect={handleSelect} // Pass down selection handler
+        addElement={addElement}
+        deleteSelectedElement={deleteSelectedElement}
+      />
     </div>
   );
 }
@@ -362,6 +555,11 @@ interface SceneContentProps {
   // --- 追加: nearClip と farClip を props で受け取る ---
   nearClip: number;
   farClip: number;
+  // --- 追加: Visibility states ---
+  showModel: boolean;
+  showWeldPoints: boolean;
+  showLocators: boolean;
+  showPins: boolean;
 }
 
 const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
@@ -378,7 +576,12 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
   transformControlsRef,
   // --- 追加: props から nearClip と farClip を受け取る ---
   nearClip,
-  farClip
+  farClip,
+  // --- 追加: Visibility states ---
+  showModel,
+  showWeldPoints,
+  showLocators,
+  showPins
 }, ref): JSX.Element => { // Added return type
 
   const { camera, scene, controls } = useThree((state: RootState) => ({
@@ -453,12 +656,25 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
       <directionalLight position={[-10, -10, -5]} intensity={0.5} />
       <axesHelper args={[50]} />
       <Suspense fallback={null}>
-        {modelData ? ( <Center> <Model url={modelData.url} fileType={modelData.fileType} /> </Center> )
-         : ( <mesh> <boxGeometry args={[1, 1, 1]} /> <meshStandardMaterial color="orange" /> </mesh> )}
-        {weldPoints.map((point) => ( <WeldPointObject key={`wp-${point.id}`} point={point} isSelected={selectedObject?.type === 'weldPoint' && selectedObject.id === point.id} onSelect={onObjectSelect('weldPoint', point.id)} /> ))}
-        {locators.map((loc) => ( <LocatorObject key={`loc-${loc.id}`} locator={loc} isSelected={selectedObject?.type === 'locator' && selectedObject.id === loc.id} onSelect={onObjectSelect('locator', loc.id)} /> ))}
-        {pins.map((pin) => ( <PinObject key={`pin-${pin.id}`} pin={pin} isSelected={selectedObject?.type === 'pin' && selectedObject.id === pin.id} onSelect={onObjectSelect('pin', pin.id)} /> ))}
-        {selectedMesh && (
+        {/* Model Visibility */}
+        {showModel && modelData && ( <Center> <Model url={modelData.url} fileType={modelData.fileType} /> </Center> )}
+        {/* Keep placeholder if no model and model visibility is on, or always show placeholder? Let's show if no model loaded, regardless of toggle */}
+        {!modelData && ( <mesh> <boxGeometry args={[1, 1, 1]} /> <meshStandardMaterial color="orange" /> </mesh> )}
+
+        {/* Weld Points Visibility */}
+        {showWeldPoints && weldPoints.map((point) => ( <WeldPointObject key={`wp-${point.id}`} point={point} isSelected={selectedObject?.type === 'weldPoint' && selectedObject.id === point.id} onSelect={onObjectSelect('weldPoint', point.id)} /> ))}
+
+        {/* Locators Visibility */}
+        {showLocators && locators.map((loc) => ( <LocatorObject key={`loc-${loc.id}`} locator={loc} isSelected={selectedObject?.type === 'locator' && selectedObject.id === loc.id} onSelect={onObjectSelect('locator', loc.id)} /> ))}
+
+        {/* Pins Visibility */}
+        {showPins && pins.map((pin) => ( <PinObject key={`pin-${pin.id}`} pin={pin} isSelected={selectedObject?.type === 'pin' && selectedObject.id === pin.id} onSelect={onObjectSelect('pin', pin.id)} /> ))}
+
+        {/* TransformControls Visibility: Show only if the selected object's type is also visible */}
+        {selectedMesh &&
+         ((selectedObject?.type === 'weldPoint' && showWeldPoints) ||
+          (selectedObject?.type === 'locator' && showLocators) ||
+          (selectedObject?.type === 'pin' && showPins)) && (
           <TransformControls ref={transformControlsRef} object={selectedMesh} mode={selectedObject?.type === 'weldPoint' ? 'translate' : 'translate'} onMouseUp={handleTransformEnd} size={0.5} />
         )}
       </Suspense>
