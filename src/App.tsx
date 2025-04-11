@@ -48,7 +48,7 @@ const PinObject: React.FC<{ pin: Pin } & ObjectComponentProps> = ({ pin, isSelec
 // Model Component - Ensure it returns JSX or null
 function Model({ url, fileType }: { url: string, fileType: 'stl' | 'obj' }): JSX.Element | null {
   const loader = fileType === 'stl' ? STLLoader : OBJLoader; const geom = useLoader(loader as any, url); const ref = useRef<THREE.Object3D>(null!);
-  useLayoutEffect(() => { if (!ref.current) return; ref.current.traverse((child) => { if (child instanceof THREE.Mesh) { child.userData = { type: 'modelPart' }; const applyDoubleSide = (material: THREE.Material | THREE.Material[]) => { if (Array.isArray(material)) material.forEach(m => m.side = THREE.DoubleSide); else material.side = THREE.DoubleSide; }; if (!child.material) child.material = new THREE.MeshStandardMaterial({ color: 'gray', side: THREE.DoubleSide }); else applyDoubleSide(child.material); } }); const box = new THREE.Box3().setFromObject(ref.current); const center = box.getCenter(new THREE.Vector3()); ref.current.position.sub(center); }, [geom]);
+  useLayoutEffect(() => { if (!ref.current) return; ref.current.traverse((child) => { if (child instanceof THREE.Mesh) { child.userData = { type: 'modelPart' }; const applyDoubleSide = (material: THREE.Material | THREE.Material[]) => { if (Array.isArray(material)) material.forEach(m => m.side = THREE.DoubleSide); else material.side = THREE.DoubleSide; }; if (!child.material) child.material = new THREE.MeshStandardMaterial({ color: 'gray', side: THREE.DoubleSide }); else applyDoubleSide(child.material); } }); const box = new THREE.Box3().setFromObject(ref.current); const center = box.getCenter(new THREE.Vector3()); /* ref.current.position.sub(center); */ }, [geom]);
   if (fileType === 'obj' && geom instanceof THREE.Group) return <primitive name="loaded-model-obj" ref={ref as React.MutableRefObject<THREE.Group>} object={geom} scale={1} />;
   if (fileType === 'stl' && geom instanceof THREE.BufferGeometry) return <mesh name="loaded-model-stl" ref={ref as React.MutableRefObject<THREE.Mesh>} geometry={geom} scale={1}><meshStandardMaterial color="lightblue" side={THREE.DoubleSide} /></mesh>;
   return null;
@@ -657,7 +657,7 @@ const SceneContent = forwardRef<SceneContentHandles, SceneContentProps>(({
       <axesHelper args={[50]} />
       <Suspense fallback={null}>
         {/* Model Visibility */}
-        {showModel && modelData && ( <Center> <Model url={modelData.url} fileType={modelData.fileType} /> </Center> )}
+        {showModel && modelData && ( <Model url={modelData.url} fileType={modelData.fileType} /> )}
         {/* Keep placeholder if no model and model visibility is on, or always show placeholder? Let's show if no model loaded, regardless of toggle */}
         {!modelData && ( <mesh> <boxGeometry args={[1, 1, 1]} /> <meshStandardMaterial color="orange" /> </mesh> )}
 
