@@ -1,15 +1,16 @@
-# Dependencies
-/node_modules
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
 
-# Vite build output
-/dist
+# Virtual environment
+.venv/
+.venv310/
+venv/
+ENV/
+env/
 
-# Environment variables
-.env
-.env.*
-!.env.example
-
-# IDE/Editor specific
+# IDE / Editor specific
 .vscode/
 .idea/
 
@@ -17,12 +18,13 @@
 .DS_Store
 Thumbs.db
 
-# Log files
-*.log
+# Data files (if large or not meant for repo - uncomment and specify if needed)
+# data/*.obj
+# data/generated_slices/*.png
+
+# Node.js
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-
-# Vite cache
-.vite/
+package-lock.json # Optional: sometimes committed, sometimes not
