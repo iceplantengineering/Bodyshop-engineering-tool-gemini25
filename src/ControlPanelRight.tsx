@@ -8,8 +8,9 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 
-import { WeldPoint, Locator, Pin, SelectedObject } from './App'; // Assuming types are exported from App.tsx or a types file
-
+import { WeldPoint, Locator, Pin, SelectedObject, SceneObjectData } from './App'; // Assuming types are exported from App.tsx or a types file
+// SceneObjectData をインポートリストに追加 (WeldPoint | Locator | Pin のエイリアスとして)
+ 
 interface ControlPanelRightProps {
   showModel: boolean;
   setShowModel: (show: boolean) => void;
@@ -26,8 +27,9 @@ interface ControlPanelRightProps {
   handleSelect: (type: 'weldPoint' | 'locator' | 'pin', id: string, mesh: THREE.Object3D | null) => void; // Allow null mesh for selection from list
   addElement: (type: 'weldPoint' | 'locator' | 'pin') => void;
   deleteSelectedElement: () => void;
+  modelFileName: string | null; // 追加
 }
-
+ 
 const ControlPanelRight: React.FC<ControlPanelRightProps> = ({
   showModel, setShowModel,
   showWeldPoints, setShowWeldPoints,
@@ -35,8 +37,92 @@ const ControlPanelRight: React.FC<ControlPanelRightProps> = ({
   showPins, setShowPins,
   weldPoints, locators, pins,
   selectedObject, handleSelect,
-  addElement, deleteSelectedElement
+  addElement, deleteSelectedElement,
+  modelFileName // 追加
 }) => {
+ 
+  const handleGenerateSlice = async (type: 'locator') => {
+    console.log("handleGenerateSlice called. Type:", type); // ★追加: 関数呼び出し確認
+
+    if (!modelFileName) {
+      alert("OBJモデルがロードされていません。");
+      console.error("handleGenerateSlice: modelFileName is null.");
+      return;
+    }
+    // ★修正: selectedObject の存在と type をより厳密にチェック
+    if (!selectedObject || selectedObject.type !== type || selectedObject.id === null || selectedObject.id === undefined) {
+      alert(`${type} が正しく選択されていません。`);
+      console.error("handleGenerateSlice: Selected object is invalid or not a locator.", selectedObject);
+      return;
+    }
+
+    let selectedData: Locator | undefined;
+    if (type === 'locator') {
+      selectedData = locators.find(loc => loc.id === selectedObject.id);
+    } else {
+      alert(`現在、${type} の断面生成はサポートされていません。LOCATORを選択してください。`);
+      return;
+    }
+
+    if (!selectedData) {
+      alert("選択されたオブジェクトのデータが見つかりません。");
+      console.error("handleGenerateSlice: selectedData not found for ID:", selectedObject.id);
+      return;
+    }
+
+    const payload = {
+      obj_file_path: modelFileName,
+      locators: [selectedData]
+    };
+
+    console.log("Payload object to be sent:", payload);
+    try {
+      const jsonStringPayload = JSON.stringify(payload); // ★追加: stringifyをtry-catchの外へ
+      console.log("JSON string to be sent:", jsonStringPayload);
+
+      const response = await fetch('http://localhost:5000/slice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonStringPayload, // ★変更: 事前にstringifyした変数を使用
+      });
+
+      // ★追加: レスポンスのステータスコードもログに出力
+      console.log("API Response Status:", response.status);
+
+      const resultText = await response.text(); // ★変更: まずテキストで結果を取得
+      console.log("Raw API Response Text:", resultText);
+
+      if (response.ok) {
+        try {
+          const resultJson = JSON.parse(resultText); // ★追加: テキストからJSONへパース
+          alert(`断面生成リクエスト成功: ${resultJson.message}\n詳細はサーバーログと生成された画像を確認してください。`);
+          console.log("API Success (Parsed JSON):", resultJson);
+        } catch (e) {
+          alert(`断面生成リクエスト成功しましたが、レスポンスJSONの解析に失敗しました。\nサーバーレスポンス: ${resultText}`);
+          console.error("API Success, but JSON parse error:", e, "Raw text:", resultText);
+        }
+      } else {
+        try {
+          const errorJson = JSON.parse(resultText); // ★追加: エラーレスポンスもJSONパース試行
+          alert(`断面生成リクエスト失敗 (ステータス: ${response.status}): ${errorJson.error}\n${errorJson.details || ''}\n詳細はサーバーログを確認してください。`);
+          console.error("API Error (Parsed JSON):", errorJson);
+        } catch (e) {
+          alert(`断面生成リクエスト失敗 (ステータス: ${response.status})。\nサーバーからの応答: ${resultText}`);
+          console.error("API Error, JSON parse error or not JSON:", e, "Raw text:", resultText);
+        }
+      }
+    } catch (error) {
+      // ★修正: エラーの種類をより具体的に表示
+      if (error instanceof TypeError && error.message === "Failed to fetch") {
+          alert(`APIリクエスト中にネットワークエラーが発生しました: Failed to fetch.\nサーバーが起動しているか、URL (http://localhost:5000/slice) が正しいか、CORS設定が有効か確認してください。`);
+      } else {
+          alert(`APIリクエスト中に予期せぬエラーが発生しました: ${error}`);
+      }
+      console.error("API Fetch/Processing Error:", error);
+    }
+  };
 
   // Helper to find the mesh (simplified, might need adjustment based on actual scene access)
   const findMeshInScene = (type: 'weldPoint' | 'locator' | 'pin', id: string): THREE.Object3D | null => {
@@ -152,6 +238,15 @@ const ControlPanelRight: React.FC<ControlPanelRightProps> = ({
                                   <DeleteIcon />
                               </IconButton>
                           </Box>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => handleGenerateSlice('locator')}
+                            disabled={!selectedObject || selectedObject.type !== 'locator' || !modelFileName}
+                            sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.5)', mt: 0.5, width: '100%' }}
+                          >
+                            選択Locator断面生成
+                          </Button>
                       </Stack>
                   </AccordionDetails>
               </Accordion>

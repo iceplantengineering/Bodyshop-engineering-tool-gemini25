@@ -188,7 +188,7 @@ function App() {
   const [weldPoints, setWeldPoints] = useState<WeldPoint[]>([]);
   const [locators, setLocators] = useState<Locator[]>([]);
   const [pins, setPins] = useState<Pin[]>([]);
-  const [modelData, setModelData] = useState<{ url: string; fileType: 'stl' | 'obj' } | null>(null);
+  const [modelData, setModelData] = useState<{ url: string; fileType: 'stl' | 'obj'; fileName: string } | null>(null);
   // Filter states
   const [selectedProcess, setSelectedProcess] = useState<string>('ALL');
   const [availableProcesses, setAvailableProcesses] = useState<string[]>(['ALL']);
@@ -269,9 +269,13 @@ function App() {
   const handleModelFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return; const fileType = file.name.split('.').pop()?.toLowerCase();
     if (fileType !== 'stl' && fileType !== 'obj') { alert('Unsupported file type. Please load STL or OBJ files.'); event.target.value = ''; return; }
-    const url = URL.createObjectURL(file); console.log(`Loading ${fileType.toUpperCase()} Model:`, file.name); setModelData({ url, fileType }); event.target.value = '';
+    const url = URL.createObjectURL(file);
+    const fileName = file.name; // ファイル名を取得
+    console.log(`Loading ${fileType?.toUpperCase()} Model: ${fileName}`);
+    setModelData({ url, fileType: fileType as 'stl' | 'obj', fileName }); // fileName をセット
+    event.target.value = '';
   };
-
+ 
   const handleLoadClick = (ref: React.RefObject<HTMLInputElement>) => ref.current?.click();
   useLayoutEffect(() => { return () => { if (modelData?.url) { URL.revokeObjectURL(modelData.url); console.log("Revoked Model Object URL:", modelData.url); } }; }, [modelData]);
 
@@ -532,6 +536,7 @@ function App() {
         handleSelect={handleSelect} // Pass down selection handler
         addElement={addElement}
         deleteSelectedElement={deleteSelectedElement}
+        modelFileName={modelData?.fileName ?? null}
       />
     </div>
   );
