@@ -191,11 +191,14 @@ def main_test():
         # Open3Dで生成した既存のtest_cube.objを使う前提で進める
         # もしなければ、Open3Dのコードで生成する
         print(f"Warning: {cube_mesh_path} not found. Please generate it or provide a valid OBJ.")
-        # 簡易的にOpen3Dのコードを呼び出して生成
-        import open3d as o3d # main_testでcube生成に使うため
-        temp_mesh_o3d = o3d.geometry.TriangleMesh.create_box(width=1.0, height=1.0, depth=1.0)
-        o3d.io.write_triangle_mesh(cube_mesh_path, temp_mesh_o3d, write_ascii=True)
-        print(f"Generated {cube_mesh_path} using Open3D for PyVista test.")
+        # 簡易的にPyVistaのコードを呼び出して生成
+        # import open3d as o3d # main_testでcube生成に使うため
+        # temp_mesh_o3d = o3d.geometry.TriangleMesh.create_box(width=1.0, height=1.0, depth=1.0)
+        # o3d.io.write_triangle_mesh(cube_mesh_path, temp_mesh_o3d, write_ascii=True)
+        # print(f"Generated {cube_mesh_path} using Open3D for PyVista test.")
+        box = pv.Box()
+        box.save(cube_mesh_path)
+        print(f"Saved test cube using PyVista to {cube_mesh_path}")
 
 
     locators_data = [
@@ -227,5 +230,5 @@ def main_test():
 if __name__ == "__main__":
     # Open3Dのインポートも必要になる場合があるので、main_testの先頭に移動するか、
     # main_test内でcube生成にOpen3Dを使うならそのままでOK
-    import open3d as o3d # main_testでcube生成に使うため
+    # import open3d as o3d # main_testでcube生成に使うため
     main_test()

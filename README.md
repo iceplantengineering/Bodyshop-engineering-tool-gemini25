@@ -56,23 +56,24 @@
 
 -   Python 3.10 の使用を推奨します。
 -   プロジェクトルートにPython 3.10の仮想環境を作成します。
+
     ```bash
-    # Python 3.10 が py -3.10 で呼び出せる場合
-    py -3.10 -m venv .venv310 
-    # または python3.10 -m venv .venv310 など環境に合わせて
+    python -m venv .venv310
     ```
 -   仮想環境をアクティベートします。
     -   Windows (PowerShell): `.\.venv310\Scripts\activate`
     -   macOS/Linux: `source .venv310/bin/activate`
 -   必要なPythonライブラリをインストールします。
+
     ```bash
-    pip install Flask flask-cors pyvista Pillow numpy open3d 
-    # open3d は slice_obj.py の main_test でテスト用OBJ生成に使用しているため含めています。
+    pip install Flask flask-cors pyvista Pillow numpy
+    # open3d は削除しました。
     ```
 
 #### 2. APIサーバーの起動
 
 -   仮想環境がアクティベートされたターミナルで、プロジェクトルートから以下を実行します。
+
     ```bash
     python app.py
     ```
@@ -80,9 +81,10 @@
 
 #### 3. フロントエンド開発サーバーの起動
 
--   （このプロジェクトのフロントエンド起動コマンドをここに記載 - 例: Viteの場合）
 -   別のターミナルを開き、プロジェクトルートでフロントエンドの開発サーバーを起動します。
+
     ```bash
+    npm install
     npm run dev 
     # または yarn dev など、package.json の scripts に定義されたコマンド
     ```

@@ -3,7 +3,7 @@ from flask_cors import CORS # 追加
 import os
 import numpy as np # For potential future use, or if slice_obj needs it indirectly
 from slice_obj import process_locators_for_obj # Refactored function
-import open3d as o3d # o3d.io.read_triangle_mesh をここで使う場合、または slice_obj 内で完結させる
+# import open3d as o3d # o3d.io.read_triangle_mesh をここで使う場合、または slice_obj 内で完結させる
 
 app = Flask(__name__)
 CORS(app) # 追加: これで全てのルートでCORSが有効になります
